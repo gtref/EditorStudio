@@ -1,3 +1,136 @@
 :root {
   --font: monospace;
 }
+
+body {
+  font-family: var(--font);
+}
+
+button {
+  font-family: var(--font);
+  border-radius: 10px;
+}
+
+.consent-banner {
+  position: fixed;
+  right: 1rem;
+  bottom: 1rem;
+  left: 1rem;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem;
+  border: 1px solid #777;
+  background: #fff;
+  color: #111;
+}
+
+.consent-banner[hidden] {
+  display: none;
+}
+
+.consent-banner p {
+  margin: 0;
+  line-height: 1.5;
+}
+
+.consent-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 0.5rem;
+}
+
+.consent-actions button {
+  padding: 0.6rem 0.8rem;
+  font: inherit;
+  cursor: pointer;
+}
+
+@media (max-width: 600px) {
+  .consent-banner {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .consent-actions {
+    flex-wrap: wrap;
+  }
+}
+
+.workspace {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  min-height: calc(100vh - 55px);
+}
+
+.tools {
+  padding: 1rem;
+  border-right: 1px solid #ccc;
+}
+
+.stage {
+  display: grid;
+  place-items: center;
+  overflow: auto;
+  padding: 2rem;
+  background: #eee;
+}
+
+.canvas-wrap {
+  position: relative;
+  width: min(100%, 900px);
+  aspect-ratio: 3 / 2;
+  background-color: #fff;
+  background-image: repeating-conic-gradient(#ddd 0% 25%, #fff 0% 50%);
+  background-size: 24px 24px;
+  box-shadow: 0 2px 12px #0002;
+}
+
+#editor {
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+}
+
+#text-editor {
+  position: absolute;
+  z-index: 1;
+  box-sizing: border-box;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  font-family: monospace;
+  white-space: pre;
+  resize: none;
+  transform-origin: center;
+}
+
+#delete-item:disabled {
+  cursor: not-allowed;
+  opacity: .5;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  min-height: 3.5rem;
+  padding: 0 1rem;
+  border-bottom: 1px solid #ccc;
+  background: #fff;
+}
+
+.toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  flex: 1;
+}
+
+.toolbar-spacer { flex: 1; }
+.toolbar button { padding: .5rem .75rem; font: inherit; cursor: pointer; }

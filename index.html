@@ -1,17 +1,307 @@
 <!DOCTYPE html>
 <html>
-  <head>
-    <title>EditorStudio | Simple image editor</title>
-    <link rel="stylesheet" href="style.css">
-    <!-- <script type="text/javascript">
-    (function(c,l,a,r,i,t,y){
-        c[a]=c[a]||function(){(c[a].q=c[a].q||[]).push(arguments)};
-        t=l.createElement(r);t.async=1;t.src="https://www.clarity.ms/tag/"+i;
-        y=l.getElementsByTagName(r)[0];y.parentNode.insertBefore(t,y);
-    })(window, document, "clarity", "script", "zeuyylhn5b");
-</script> -->
-  </head>
-  <body>
-    <h1>Welcome</h1>
-  </body>
+
+<head>
+  <title>EditorStudio | Simple image editor</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+  <header class="toolbar">
+    <strong class="brand">SatisStudio</strong>
+    <nav class="toolbar-actions" aria-label="Editor actions">
+      <button id="upload-image" type="button">Upload image</button>
+      <button id="add-text" type="button">Add text</button>
+      <button id="delete-item" type="button" disabled>Delete selected</button>
+      <span class="toolbar-spacer"></span>
+      <button id="open-project" type="button">Open</button>
+      <button id="save-project" type="button">Save</button>
+      <button id="export-png" type="button">Export PNG</button>
+    </nav>
+  </header>
+  <main class="workspace">
+    <aside class="tools">Canvas size and selected-item options</aside>
+    <section class="stage">
+      <div class="canvas-wrap">
+        <canvas id="editor" width="1200" height="800" aria-label="Design canvas"></canvas>
+        <textarea id="text-editor" aria-label="Edit selected text" spellcheck="false" hidden></textarea>
+      </div>
+    </section>
+  </main>
+  <aside class="consent-banner" id="consent-banner" aria-label="Analytics cookie consent" hidden>
+    <p>
+      We use cookies and Microsoft Clarity to understand how people use SatisStudio,
+      helping us improve the editor and prioritize new features. We do not sell your data.
+    </p>
+    <div class="consent-actions">
+      <button id="accept-analytics" type="button">Accept analytics</button>
+      <button id="decline-analytics" type="button">Decline analytics</button>
+    </div>
+  </aside>
+  <script>
+    (function () {
+      const consentKey = "satisstudio-analytics-consent";
+      const banner = document.getElementById("consent-banner");
+
+      function loadClarity() {
+        window.clarity = window.clarity || function () {
+          (window.clarity.q = window.clarity.q || []).push(arguments);
+        };
+        const script = document.createElement("script");
+        script.async = true;
+        script.src = "https://www.clarity.ms/tag/zeuyylhn5b";
+        document.head.appendChild(script);
+      }
+
+      const consent = localStorage.getItem(consentKey);
+      if (consent === "accepted") {
+        loadClarity();
+      } else if (consent !== "declined") {
+        banner.hidden = false;
+      }
+
+      document.getElementById("accept-analytics").addEventListener("click", function () {
+        localStorage.setItem(consentKey, "accepted");
+        banner.hidden = true;
+        loadClarity();
+      });
+
+      document.getElementById("decline-analytics").addEventListener("click", function () {
+        localStorage.setItem(consentKey, "declined");
+        banner.hidden = true;
+      });
+    })();
+  </script>
+  <script>
+    const canvas = document.getElementById("editor");
+    const context = canvas.getContext("2d");
+    const canvasWrap = document.querySelector(".canvas-wrap");
+    const textEditor = document.getElementById("text-editor");
+    const deleteButton = document.getElementById("delete-item");
+    const items = [];
+    const handleRadius = 9;
+    let selectedItem = null;
+    let interaction = null;
+
+    function getBounds(item) {
+      context.font = `${item.fontSize}px monospace`;
+      const lines = item.text.split("\n");
+      const width = Math.max(40, ...lines.map(line => context.measureText(line).width)) + 12;
+      const height = lines.length * item.fontSize * 1.2 + 8;
+      return {
+        x: item.x,
+        y: item.y,
+        width,
+        height,
+        centerX: item.x + width / 2,
+        centerY: item.y + height / 2
+      };
+    }
+
+    function drawHandle(x, y, fill) {
+      context.beginPath();
+      context.arc(x, y, handleRadius, 0, Math.PI * 2);
+      context.fillStyle = fill;
+      context.fill();
+      context.strokeStyle = "#2563eb";
+      context.lineWidth = 2;
+      context.stroke();
+    }
+
+    function positionTextEditor() {
+      if (textEditor.hidden || !selectedItem) return;
+      const bounds = getBounds(selectedItem);
+      const scaleX = canvasWrap.clientWidth / canvas.width;
+      const scaleY = canvasWrap.clientHeight / canvas.height;
+      textEditor.style.left = `${bounds.x * scaleX + 6 * scaleX}px`;
+      textEditor.style.top = `${bounds.y * scaleY + 4 * scaleY}px`;
+      textEditor.style.width = `${Math.max(1, bounds.width - 12) * scaleX}px`;
+      textEditor.style.height = `${Math.max(1, bounds.height - 8) * scaleY}px`;
+      textEditor.style.fontSize = `${selectedItem.fontSize * scaleY}px`;
+      textEditor.style.lineHeight = `${selectedItem.fontSize * 1.2 * scaleY}px`;
+      textEditor.style.color = selectedItem.color;
+      textEditor.style.transform = `rotate(${selectedItem.rotation}rad)`;
+    }
+
+    function render() {
+      context.clearRect(0, 0, canvas.width, canvas.height);
+      context.textBaseline = "top";
+
+      for (const item of items) {
+        const bounds = getBounds(item);
+        context.save();
+        context.translate(bounds.centerX, bounds.centerY);
+        context.rotate(item.rotation);
+
+        if (item !== selectedItem || textEditor.hidden) {
+          context.font = `${item.fontSize}px monospace`;
+          context.fillStyle = item.color;
+          item.text.split("\n").forEach((line, index) => {
+            context.fillText(line, -bounds.width / 2 + 6, -bounds.height / 2 + 4 + index * item.fontSize * 1.2);
+          });
+        }
+
+        if (item === selectedItem) {
+          context.strokeStyle = "#2563eb";
+          context.lineWidth = 2;
+          context.setLineDash([6, 4]);
+          context.strokeRect(-bounds.width / 2, -bounds.height / 2, bounds.width, bounds.height);
+          context.setLineDash([]);
+          context.beginPath();
+          context.moveTo(0, -bounds.height / 2);
+          context.lineTo(0, -bounds.height / 2 - 20);
+          context.stroke();
+          drawHandle(0, -bounds.height / 2 - 28, "#2563eb");
+          drawHandle(bounds.width / 2, bounds.height / 2, "#fff");
+        }
+        context.restore();
+      }
+
+      deleteButton.disabled = !selectedItem;
+      positionTextEditor();
+    }
+
+    function canvasPoint(event) {
+      const rect = canvas.getBoundingClientRect();
+      return {
+        x: (event.clientX - rect.left) * canvas.width / rect.width,
+        y: (event.clientY - rect.top) * canvas.height / rect.height
+      };
+    }
+
+    function localPoint(point, item) {
+      const bounds = getBounds(item);
+      const dx = point.x - bounds.centerX;
+      const dy = point.y - bounds.centerY;
+      const cos = Math.cos(-item.rotation);
+      const sin = Math.sin(-item.rotation);
+      return { x: dx * cos - dy * sin, y: dx * sin + dy * cos };
+    }
+
+    function findItemAt(point) {
+      return [...items].reverse().find(item => {
+        const bounds = getBounds(item);
+        const local = localPoint(point, item);
+        return Math.abs(local.x) <= bounds.width / 2 && Math.abs(local.y) <= bounds.height / 2;
+      });
+    }
+
+    function hitSelectedHandle(point) {
+      if (!selectedItem) return null;
+      const bounds = getBounds(selectedItem);
+      const local = localPoint(point, selectedItem);
+      if (Math.hypot(local.x, local.y + bounds.height / 2 + 28) < handleRadius * 2) return "rotate";
+      if (Math.hypot(local.x - bounds.width / 2, local.y - bounds.height / 2) < handleRadius * 2) return "resize";
+      return null;
+    }
+
+    canvas.addEventListener("pointerdown", event => {
+      if (!textEditor.hidden) {
+        textEditor.hidden = true;
+      }
+      const point = canvasPoint(event);
+      const handle = hitSelectedHandle(point);
+
+      if (handle) {
+        const bounds = getBounds(selectedItem);
+        interaction = {
+          type: handle,
+          item: selectedItem,
+          startX: point.x,
+          startY: point.y,
+          startSize: selectedItem.fontSize,
+          startRotation: selectedItem.rotation,
+          startAngle: Math.atan2(point.y - bounds.centerY, point.x - bounds.centerX)
+        };
+      } else {
+        selectedItem = findItemAt(point) || null;
+        interaction = selectedItem ? {
+          type: "move",
+          item: selectedItem,
+          startX: point.x,
+          startY: point.y,
+          itemX: selectedItem.x,
+          itemY: selectedItem.y
+        } : null;
+      }
+
+      if (interaction) canvas.setPointerCapture(event.pointerId);
+      render();
+    });
+
+    canvas.addEventListener("pointermove", event => {
+      if (!interaction) return;
+      const point = canvasPoint(event);
+      const item = interaction.item;
+      if (interaction.type === "move") {
+        item.x = interaction.itemX + point.x - interaction.startX;
+        item.y = interaction.itemY + point.y - interaction.startY;
+      } else if (interaction.type === "resize") {
+        const delta = (point.x - interaction.startX + point.y - interaction.startY) / 2;
+        item.fontSize = Math.max(8, Math.min(200, interaction.startSize + delta));
+      } else {
+        const bounds = getBounds(item);
+        const angle = Math.atan2(point.y - bounds.centerY, point.x - bounds.centerX);
+        item.rotation = interaction.startRotation + angle - interaction.startAngle;
+      }
+      render();
+    });
+
+    function stopInteraction() {
+      interaction = null;
+    }
+
+    canvas.addEventListener("pointerup", stopInteraction);
+    canvas.addEventListener("pointercancel", stopInteraction);
+    canvas.addEventListener("dblclick", event => {
+      const item = findItemAt(canvasPoint(event));
+      if (!item) return;
+      selectedItem = item;
+      textEditor.value = item.text;
+      textEditor.hidden = false;
+      render();
+      textEditor.focus();
+      textEditor.setSelectionRange(textEditor.value.length, textEditor.value.length);
+    });
+
+    textEditor.addEventListener("input", () => {
+      if (!selectedItem) return;
+      selectedItem.text = textEditor.value;
+      render();
+    });
+    textEditor.addEventListener("blur", () => {
+      textEditor.hidden = true;
+      render();
+    });
+
+    function deleteSelectedItem() {
+      if (!selectedItem) return;
+      items.splice(items.indexOf(selectedItem), 1);
+      selectedItem = null;
+      textEditor.hidden = true;
+      render();
+    }
+
+    deleteButton.addEventListener("click", deleteSelectedItem);
+    document.addEventListener("keydown", event => {
+      if ((event.key === "Delete" || event.key === "Backspace") &&
+        textEditor.hidden && selectedItem) {
+        event.preventDefault();
+        deleteSelectedItem();
+      }
+    });
+
+    document.getElementById("add-text").addEventListener("click", () => {
+      const text = window.prompt("Enter your text:");
+      if (text === null || text.trim() === "") return;
+
+      selectedItem = { text, x: 80, y: 80, fontSize: 32, color: "#111", rotation: 0 };
+      items.push(selectedItem);
+      render();
+    });
+
+    render();
+  </script>
+</body>
+
 </html>
