@@ -23,9 +23,9 @@ The MVP should be lightweight, browser-based, and require no backend or database
 
 ### Text
 
-- Add text elements
-- Edit text
-- Move text around the canvas
+-[x] Add text elements
+-[x] Edit text
+-[x] Move text around the canvas
 
 ### Projects
 
