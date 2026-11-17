@@ -11,10 +11,12 @@
     <strong class="brand">SatisStudio</strong>
     <nav class="toolbar-actions" aria-label="Editor actions">
       <button id="upload-image" type="button">Upload image</button>
+      <input id="image-file" type="file" accept="image/*" hidden>
       <button id="add-text" type="button">Add text</button>
       <button id="delete-item" type="button" disabled>Delete selected</button>
       <span class="toolbar-spacer"></span>
       <button id="open-project" type="button">Open</button>
+      <input id="project-file" type="file" accept=".satis,application/json" hidden>
       <button id="save-project" type="button">Save</button>
       <button id="export-png" type="button">Export PNG</button>
     </nav>
@@ -78,12 +80,85 @@
     const canvasWrap = document.querySelector(".canvas-wrap");
     const textEditor = document.getElementById("text-editor");
     const deleteButton = document.getElementById("delete-item");
+    const uploadButton = document.getElementById("upload-image");
+    const imageFileInput = document.getElementById("image-file");
+    const openProjectButton = document.getElementById("open-project");
+    const projectFileInput = document.getElementById("project-file");
+    const saveProjectButton = document.getElementById("save-project");
+    const exportPngButton = document.getElementById("export-png");
     const items = [];
     const handleRadius = 9;
+    let projectName = "untitled";
     let selectedItem = null;
     let interaction = null;
 
+    function trackEvent(eventName) {
+      if (typeof window.clarity === "function") {
+        window.clarity("event", eventName);
+      }
+    }
+
+    uploadButton.addEventListener("click", () => {
+      imageFileInput.click();
+    });
+
+    openProjectButton.addEventListener("click", () => {
+      projectFileInput.click();
+    });
+
+    imageFileInput.addEventListener("change", () => {
+      const file = imageFileInput.files[0];
+      if (!file) return;
+
+      const image = new Image();
+      const imageUrl = URL.createObjectURL(file);
+
+      image.onload = () => {
+        URL.revokeObjectURL(imageUrl);
+        const scale = Math.min(
+          1,
+          canvas.width * 0.8 / image.naturalWidth,
+          canvas.height * 0.8 / image.naturalHeight
+        );
+        const width = image.naturalWidth * scale;
+        const height = image.naturalHeight * scale;
+        selectedItem = {
+          type: "image",
+          image,
+          x: (canvas.width - width) / 2,
+          y: (canvas.height - height) / 2,
+          width,
+          height,
+          rotation: 0
+        };
+        items.push(selectedItem);
+        textEditor.hidden = true;
+        imageFileInput.value = "";
+        trackEvent("import-image");
+        render();
+      };
+
+      image.onerror = () => {
+        URL.revokeObjectURL(imageUrl);
+        imageFileInput.value = "";
+        window.alert(`Could not load "${file.name}". Please choose a valid image.`);
+      };
+
+      image.src = imageUrl;
+    });
+
     function getBounds(item) {
+      if (item.type === "image") {
+        return {
+          x: item.x,
+          y: item.y,
+          width: item.width,
+          height: item.height,
+          centerX: item.x + item.width / 2,
+          centerY: item.y + item.height / 2
+        };
+      }
+
       context.font = `${item.fontSize}px monospace`;
       const lines = item.text.split("\n");
       const width = Math.max(40, ...lines.map(line => context.measureText(line).width)) + 12;
@@ -133,7 +208,15 @@
         context.translate(bounds.centerX, bounds.centerY);
         context.rotate(item.rotation);
 
-        if (item !== selectedItem || textEditor.hidden) {
+        if (item.type === "image") {
+          context.drawImage(
+            item.image,
+            -bounds.width / 2,
+            -bounds.height / 2,
+            bounds.width,
+            bounds.height
+          );
+        } else if (item !== selectedItem || textEditor.hidden) {
           context.font = `${item.fontSize}px monospace`;
           context.fillStyle = item.color;
           item.text.split("\n").forEach((line, index) => {
@@ -160,6 +243,253 @@
       deleteButton.disabled = !selectedItem;
       positionTextEditor();
     }
+
+    function createProjectData() {
+      const assets = [];
+      const elements = items.map(item => {
+        if (item.type === "image") {
+          const assetId = `image-${assets.length + 1}`;
+          const assetCanvas = document.createElement("canvas");
+          assetCanvas.width = item.image.naturalWidth;
+          assetCanvas.height = item.image.naturalHeight;
+          assetCanvas.getContext("2d").drawImage(item.image, 0, 0);
+          assets.push({
+            id: assetId,
+            type: "image/png",
+            data: assetCanvas.toDataURL("image/png")
+          });
+          return {
+            type: "image",
+            assetId,
+            x: item.x,
+            y: item.y,
+            width: item.width,
+            height: item.height,
+            rotation: item.rotation
+          };
+        }
+
+        return {
+          type: "text",
+          content: item.text,
+          x: item.x,
+          y: item.y,
+          fontSize: item.fontSize,
+          color: item.color,
+          rotation: item.rotation
+        };
+      });
+
+      return {
+        format: "satis",
+        version: 1,
+        canvas: { width: canvas.width, height: canvas.height },
+        assets,
+        elements
+      };
+    }
+
+    function isFiniteNumber(value) {
+      return typeof value === "number" && Number.isFinite(value);
+    }
+
+    function validateProject(project) {
+      if (!project || project.format !== "satis" || project.version !== 1) {
+        throw new Error("This is not a supported Satis project file.");
+      }
+
+      const { width, height } = project.canvas || {};
+      if (!Number.isInteger(width) || !Number.isInteger(height) ||
+        width < 1 || height < 1 || width > 8192 || height > 8192 ||
+        width * height > 33554432) {
+        throw new Error("The project has invalid canvas dimensions.");
+      }
+      if (!Array.isArray(project.assets) || !Array.isArray(project.elements)) {
+        throw new Error("The project is missing its assets or elements.");
+      }
+
+      const assets = new Map();
+      for (const asset of project.assets) {
+        if (!asset || typeof asset.id !== "string" || assets.has(asset.id) ||
+          asset.type !== "image/png" || typeof asset.data !== "string" ||
+          !asset.data.startsWith("data:image/png;base64,")) {
+          throw new Error("The project contains an invalid image asset.");
+        }
+        assets.set(asset.id, asset.data);
+      }
+
+      for (const item of project.elements) {
+        if (!item || !isFiniteNumber(item.x) || !isFiniteNumber(item.y) ||
+          !isFiniteNumber(item.rotation)) {
+          throw new Error("The project contains an element with invalid position data.");
+        }
+        if (item.type === "image") {
+          if (!assets.has(item.assetId) || !isFiniteNumber(item.width) ||
+            !isFiniteNumber(item.height) || item.width <= 0 || item.height <= 0) {
+            throw new Error("The project contains an invalid image element.");
+          }
+        } else if (item.type === "text") {
+          if (typeof item.content !== "string" || !isFiniteNumber(item.fontSize) ||
+            item.fontSize <= 0 || typeof item.color !== "string") {
+            throw new Error("The project contains an invalid text element.");
+          }
+        } else {
+          throw new Error("The project contains an unsupported element type.");
+        }
+      }
+
+      return assets;
+    }
+
+    function loadImage(data) {
+      return new Promise((resolve, reject) => {
+        const image = new Image();
+        image.onload = () => resolve(image);
+        image.onerror = () => reject(new Error("A project image could not be decoded."));
+        image.src = data;
+      });
+    }
+
+    async function openProject(file) {
+      let project;
+      try {
+        project = JSON.parse(await file.text());
+      } catch {
+        throw new Error("Could not read the project file. Check that it contains valid JSON.");
+      }
+
+      const assetData = validateProject(project);
+      const loadedAssets = new Map(await Promise.all(
+        [...assetData].map(async ([id, data]) => [id, await loadImage(data)])
+      ));
+      const loadedItems = project.elements.map(item => {
+        if (item.type === "image") {
+          return {
+            type: "image",
+            image: loadedAssets.get(item.assetId),
+            x: item.x,
+            y: item.y,
+            width: item.width,
+            height: item.height,
+            rotation: item.rotation
+          };
+        }
+
+        return {
+          type: "text",
+          text: item.content,
+          x: item.x,
+          y: item.y,
+          fontSize: item.fontSize,
+          color: item.color,
+          rotation: item.rotation
+        };
+      });
+
+      canvas.width = project.canvas.width;
+      canvas.height = project.canvas.height;
+      canvasWrap.style.aspectRatio = `${canvas.width} / ${canvas.height}`;
+      items.splice(0, items.length, ...loadedItems);
+      selectedItem = null;
+      textEditor.hidden = true;
+      projectName = file.name.replace(/\.[^.]+$/, "") || "untitled";
+      trackEvent("open-project");
+      render();
+    }
+
+    saveProjectButton.addEventListener("click", () => {
+      const requestedName = window.prompt("Project name:", projectName);
+      if (requestedName === null) return;
+      const name = requestedName.trim().replace(/\.satis$/i, "");
+      if (!name || /[<>:"/\\|?*\u0000-\u001F]/.test(name) || /[. ]$/.test(name) ||
+        /^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$/i.test(name)) {
+        window.alert("Enter a valid project name.");
+        return;
+      }
+
+      try {
+        const project = createProjectData();
+        const file = new Blob([JSON.stringify(project, null, 2)], {
+          type: "application/json"
+        });
+        const url = URL.createObjectURL(file);
+        const download = document.createElement("a");
+        download.href = url;
+        download.download = `${name}.satis`;
+        download.click();
+        window.setTimeout(() => URL.revokeObjectURL(url), 0);
+        projectName = name;
+        trackEvent("save-project");
+      } catch (error) {
+        window.alert(`Could not save the project: ${error.message}`);
+      }
+    });
+
+    projectFileInput.addEventListener("change", async () => {
+      const file = projectFileInput.files[0];
+      projectFileInput.value = "";
+      if (!file) return;
+
+      try {
+        await openProject(file);
+      } catch (error) {
+        window.alert(`Could not open the project: ${error.message}`);
+      }
+    });
+
+    exportPngButton.addEventListener("click", () => {
+      const outputCanvas = document.createElement("canvas");
+      outputCanvas.width = canvas.width;
+      outputCanvas.height = canvas.height;
+      const outputContext = outputCanvas.getContext("2d");
+      if (!outputContext) {
+        window.alert("Could not export the canvas as a PNG.");
+        return;
+      }
+
+      outputContext.textBaseline = "top";
+      for (const item of items) {
+        const bounds = getBounds(item);
+        outputContext.save();
+        outputContext.translate(bounds.centerX, bounds.centerY);
+        outputContext.rotate(item.rotation);
+
+        if (item.type === "image") {
+          outputContext.drawImage(
+            item.image,
+            -bounds.width / 2,
+            -bounds.height / 2,
+            bounds.width,
+            bounds.height
+          );
+        } else {
+          outputContext.font = `${item.fontSize}px monospace`;
+          outputContext.fillStyle = item.color;
+          item.text.split("\n").forEach((line, index) => {
+            outputContext.fillText(
+              line,
+              -bounds.width / 2 + 6,
+              -bounds.height / 2 + 4 + index * item.fontSize * 1.2
+            );
+          });
+        }
+        outputContext.restore();
+      }
+
+      outputCanvas.toBlob(blob => {
+        if (!blob) {
+          window.alert("Could not export the canvas as a PNG.");
+          return;
+        }
+        const url = URL.createObjectURL(blob);
+        const download = document.createElement("a");
+        download.href = url;
+        download.download = `${projectName}_Output.png`;
+        download.click();
+        window.setTimeout(() => URL.revokeObjectURL(url), 0);
+        trackEvent("export-png");
+      }, "image/png");
+    });
 
     function canvasPoint(event) {
       const rect = canvas.getBoundingClientRect();
@@ -210,6 +540,8 @@
           startX: point.x,
           startY: point.y,
           startSize: selectedItem.fontSize,
+          startWidth: selectedItem.width,
+          startHeight: selectedItem.height,
           startRotation: selectedItem.rotation,
           startAngle: Math.atan2(point.y - bounds.centerY, point.x - bounds.centerX)
         };
@@ -238,7 +570,16 @@
         item.y = interaction.itemY + point.y - interaction.startY;
       } else if (interaction.type === "resize") {
         const delta = (point.x - interaction.startX + point.y - interaction.startY) / 2;
-        item.fontSize = Math.max(8, Math.min(200, interaction.startSize + delta));
+        if (item.type === "image") {
+          const scale = Math.max(
+            8 / Math.min(interaction.startWidth, interaction.startHeight),
+            1 + delta / Math.max(interaction.startWidth, interaction.startHeight)
+          );
+          item.width = interaction.startWidth * scale;
+          item.height = interaction.startHeight * scale;
+        } else {
+          item.fontSize = Math.max(8, Math.min(200, interaction.startSize + delta));
+        }
       } else {
         const bounds = getBounds(item);
         const angle = Math.atan2(point.y - bounds.centerY, point.x - bounds.centerX);
@@ -255,7 +596,7 @@
     canvas.addEventListener("pointercancel", stopInteraction);
     canvas.addEventListener("dblclick", event => {
       const item = findItemAt(canvasPoint(event));
-      if (!item) return;
+      if (!item || item.type === "image") return;
       selectedItem = item;
       textEditor.value = item.text;
       textEditor.hidden = false;
@@ -295,8 +636,9 @@
       const text = window.prompt("Enter your text:");
       if (text === null || text.trim() === "") return;
 
-      selectedItem = { text, x: 80, y: 80, fontSize: 32, color: "#111", rotation: 0 };
+      selectedItem = { type: "text", text, x: 80, y: 80, fontSize: 32, color: "#111", rotation: 0 };
       items.push(selectedItem);
+      trackEvent("add-text");
       render();
     });
 

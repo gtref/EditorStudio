@@ -12,14 +12,14 @@ The MVP should be lightweight, browser-based, and require no backend or database
 
 ### Canvas
 
-- Canvas for placing and editing elements
-- Fixed-size canvas
+-[x] Canvas for placing and editing elements
+-[x] Fixed-size canvas
 
 ### Images
 
-- Upload images
-- Render images on the canvas
-- Move images around the canvas
+- [x] Upload images
+- [x] Render images on the canvas
+- [x] Move images around the canvas
 
 ### Text
 
@@ -29,28 +29,37 @@ The MVP should be lightweight, browser-based, and require no backend or database
 
 ### Projects
 
-- Save projects to a `.satis` file
-- Open existing `.satis` files
-- Import projects from disk
-- Export projects to disk
+- [x] Save projects to a `.satis` file
+- [x] Open existing `.satis` files
+- [x] Import projects from disk
+- [x] Export projects to disk
+
+Project files are versioned JSON documents containing the canvas dimensions,
+embedded PNG image assets, and editable text/image elements. Element positions
+and sizes are measured in canvas pixels from the top-left corner; rotations are
+stored in radians.
+
+Saving prompts for a project name and downloads `<name>.satis`. Opening a project
+uses its filename as the project name. PNG export downloads `<name>_Output.png`
+with the canvas content and without editor selection controls.
 
 ### Export
 
-- Export canvas as PNG
+- [x] Export canvas as PNG
 
 ---
 
 ## Analytics
 
-Use Microsoft Clarity to understand how the editor is used.
+Use Microsoft Clarity to understand how the editor is used, only after analytics consent.
 
 Track events:
 
-- import-image
-- add-text
-- save-project
-- open-project
-- export-png
+- [x] import-image
+- [x] add-text
+- [x] save-project
+- [x] open-project
+- [x] export-png
 
 ---
 
@@ -114,6 +123,6 @@ A user can:
 2. Upload an image
 3. Add text
 4. Move elements around the canvas
-5. Save the project as a `.satis` file
+5. Name and save the project as a `.satis` file
 6. Open the project later
 7. Export the final image as a PNG
